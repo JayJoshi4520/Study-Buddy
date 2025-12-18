@@ -2,6 +2,11 @@ import { useState, useRef, useEffect } from 'react';
 import { Send, Loader2, Bot, Cpu, User, MessagesSquare, Mic, MessageSquare } from 'lucide-react';
 import { queryDocuments, switchModel, saveChatMessage, getChatMessages } from '../api';
 import VoiceChatInterface from './VoiceChatInterface';
+import ReactMarkdown from 'react-markdown';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
+
 
 export default function ChatInterface({ sessionUuid, sessionData, onSwitchToVoice, onEndVoiceSession }) {
   const [messages, setMessages] = useState([]);
@@ -63,7 +68,7 @@ export default function ChatInterface({ sessionUuid, sessionData, onSwitchToVoic
 
   const handleModelSwitch = async (provider) => {
     if (provider === selectedModel || isLoading || switchingModel) return;
-    
+
     try {
       setSwitchingModel(true);
       await switchModel(provider);
@@ -192,9 +197,8 @@ export default function ChatInterface({ sessionUuid, sessionData, onSwitchToVoic
 
     return (
       <div className={`flex items-start space-x-2 ${isUser ? 'flex-row-reverse space-x-reverse' : ''}`}>
-        <div className={`flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-full ${
-          isUser ? 'bg-primary' : 'bg-muted'
-        }`}>
+        <div className={`flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-full ${isUser ? 'bg-primary' : 'bg-muted'
+          }`}>
           {isUser ? (
             <User className="h-4 w-4 text-primary-foreground" />
           ) : (
@@ -202,21 +206,43 @@ export default function ChatInterface({ sessionUuid, sessionData, onSwitchToVoic
           )}
         </div>
         <div
-          className={`flex max-w-[80%] flex-col gap-2 rounded-lg px-4 py-2 text-sm ${
-            isUser
-              ? 'bg-primary text-primary-foreground'
-              : isError
+          className={`flex max-w-[80%] flex-col gap-2 rounded-lg px-4 py-2 text-sm ${isUser
+            ? 'bg-primary text-primary-foreground'
+            : isError
               ? 'bg-destructive/10 text-destructive'
-              : 'bg-muted'
-          }`}
+              : 'bg-muted text-input'
+            }`}
         >
           {message.loading ? (
             <div className="flex items-center space-x-2">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <span>Thinking...</span>
+              <Loader2 className="h-4 w-4 animate-spin text-input" />
+              <span className='text-input'>Thinking...</span>
             </div>
           ) : (
-            <p className="whitespace-pre-wrap">{message.content}</p>
+            <div className={`whitespace-pre-wrap ${!isUser ? 'prose prose-sm max-w-none dark:prose-invert' : ''}`}>
+              <ReactMarkdown
+                remarkPlugins={[remarkMath]}
+                rehypePlugins={[rehypeKatex]}
+                components={{
+                  p: ({ node, ...props }) => <p {...props} className={`leading-relaxed ${isUser ? 'text-inherit' : 'mb-2 last:mb-0'}`} />,
+                  ul: ({ node, ...props }) => <ul {...props} className="my-2 list-disc pl-4 space-y-1" />,
+                  ol: ({ node, ...props }) => <ol {...props} className="my-2 list-decimal pl-4 space-y-1" />,
+                  li: ({ node, ...props }) => <li {...props} className="leading-relaxed" />,
+                  h1: ({ node, ...props }) => <h1 {...props} className="text-lg font-bold mt-4 mb-2 first:mt-0" />,
+                  h2: ({ node, ...props }) => <h2 {...props} className="text-base font-bold mt-3 mb-2" />,
+                  h3: ({ node, ...props }) => <h3 {...props} className="text-sm font-bold mt-2 mb-1" />,
+                  code: ({ node, inline, className, children, ...props }) => {
+                    return inline ? (
+                      <code className="bg-muted px-1 py-0.5 rounded text-sm font-mono" {...props}>{children}</code>
+                    ) : (
+                      <code className="block bg-muted p-2 rounded text-sm font-mono overflow-x-auto my-2" {...props}>{children}</code>
+                    );
+                  }
+                }}
+              >
+                {message.content}
+              </ReactMarkdown>
+            </div>
           )}
         </div>
       </div>
@@ -225,7 +251,7 @@ export default function ChatInterface({ sessionUuid, sessionData, onSwitchToVoic
 
   if (!sessionUuid) {
     return (
-      <div className="flex h-full items-center justify-center rounded-lg border bg-card">
+      <div className="flex h-full items-center justify-center border bg-card font-sans">
         <div className="text-center">
           <MessagesSquare className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
           <h3 className="text-lg font-medium text-foreground mb-2">No Chat Session Selected</h3>
@@ -242,11 +268,11 @@ export default function ChatInterface({ sessionUuid, sessionData, onSwitchToVoic
   }
 
   return (
-    <div className="flex h-full flex-col rounded-lg border bg-card">
+    <div className="flex h-full flex-col border bg-card font-sans">
       <div className="border-b px-4 py-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <span className="text-sm font-medium">
+            <span className="text-sm font-bold text-input">
               {sessionData?.session_type === 'voice' ? 'Voice Session' : 'Text Session'}
             </span>
             {sessionData?.session_type === 'voice' && (
@@ -256,29 +282,27 @@ export default function ChatInterface({ sessionUuid, sessionData, onSwitchToVoic
               </span>
             )}
           </div>
-          
+
           <div className="flex items-center space-x-2">
             <button
               onClick={() => handleModelSwitch('ollama')}
               disabled={switchingModel || viewMode === 'voice'}
-              className={`inline-flex items-center space-x-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                selectedModel === 'ollama'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-accent'
-              } disabled:opacity-50`}
+              className={`inline-flex items-center space-x-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${selectedModel === 'ollama'
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:bg-accent'
+                } disabled:opacity-50`}
             >
               <Cpu className="h-4 w-4" />
               <span>Ollama</span>
             </button>
-            
+
             <button
               onClick={() => handleModelSwitch('gemini')}
               disabled={switchingModel || viewMode === 'voice'}
-              className={`inline-flex items-center space-x-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                selectedModel === 'gemini'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-accent'
-              } disabled:opacity-50`}
+              className={`inline-flex items-center space-x-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${selectedModel === 'gemini'
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:bg-accent'
+                } disabled:opacity-50`}
             >
               <Bot className="h-4 w-4" />
               <span>Gemini</span>
@@ -287,11 +311,10 @@ export default function ChatInterface({ sessionUuid, sessionData, onSwitchToVoic
             {sessionData?.session_type === 'voice' && (
               <button
                 onClick={handleVoiceModeToggle}
-                className={`inline-flex items-center space-x-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                  viewMode === 'voice'
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
-                }`}
+                className={`inline-flex items-center space-x-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${viewMode === 'voice'
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+                  }`}
                 title={viewMode === 'voice' ? 'Switch to Text Mode' : 'Switch to Voice Mode'}
               >
                 {viewMode === 'voice' ? (
@@ -314,14 +337,14 @@ export default function ChatInterface({ sessionUuid, sessionData, onSwitchToVoic
         <div ref={messagesEndRef} />
       </div>
 
-      <form onSubmit={handleSubmit} className="border-t bg-card p-4">
+      <form onSubmit={handleSubmit} className="border-t bg-card p-4 sticky bottom-0 z-10">
         <div className="flex space-x-2">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder={`Ask a question using ${selectedModel === 'gemini' ? 'Google Gemini' : 'Ollama'}...`}
-            className="flex-1 min-w-0 rounded-md border bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex-1 min-w-0 rounded-md border bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring text-input"
             disabled={isLoading || switchingModel}
           />
           <button
@@ -335,7 +358,7 @@ export default function ChatInterface({ sessionUuid, sessionData, onSwitchToVoic
               <Send className="h-4 w-4" />
             )}
           </button>
-          
+
           {sessionData?.session_type !== 'voice' && (
             <button
               type="button"

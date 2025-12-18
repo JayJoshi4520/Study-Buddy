@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Mic, MicOff, Volume2, VolumeX, Loader2, AlertCircle, Phone, PhoneOff } from 'lucide-react';
 import { Conversation } from '@elevenlabs/client';
 import { getVoiceChatConfig } from '../api';
@@ -12,39 +12,52 @@ export default function VoiceChatInterface({ sessionUuid, onEndSession }) {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const [conversation, setConversation] = useState(null);
+  const conversationRef = useRef(null);
+  const isConnectingRef = useRef(false);
+  const cancelledRef = useRef(false);
+
 
   useEffect(() => {
-    fetchConfigAndConnect();
-    
+    let isActive = true;
+
+    safeConnect(() => isActive);
+
     return () => {
-      if (conversation) {
-        conversation.endSession();
+      isActive = false;
+      isConnectingRef.current = false;
+      if (conversationRef.current) {
+        try {
+          conversationRef.current.endSession();
+        } catch { }
+        conversationRef.current = null;
       }
     };
   }, [sessionUuid]);
 
-  const fetchConfigAndConnect = async () => {
+  const safeConnect = async (checkActive = () => true) => {
+    if (!checkActive()) return;
+    if (isConnectingRef.current) return;
+    isConnectingRef.current = true;
+
+    // If a conversation is "in flight", end it first
+    if (conversationRef.current) {
+      try {
+        await conversationRef.current.endSession();
+      } catch { }
+      conversationRef.current = null;
+    }
+
     try {
       setIsConnecting(true);
       const data = await getVoiceChatConfig();
       setConfig(data);
-      await initializeConversation(data);
-    } catch (err) {
-      setError('Failed to initialize voice chat');
-      console.error('Voice chat initialization error:', err);
-    } finally {
-      setIsConnecting(false);
-    }
-  };
 
-  const initializeConversation = async (config) => {
-    try {
-      // Request microphone permission first
       await navigator.mediaDevices.getUserMedia({ audio: true });
 
-      console.log('Starting ElevenLabs conversation with config:', { agentId: config.agent_id });
+      if (!checkActive()) return;
+
       const conv = await Conversation.startSession({
-        agentId: config.agent_id,
+        agentId: data.agent_id,
         onConnect: () => {
           setIsConnected(true);
           setConnectionStatus('connected');
@@ -61,19 +74,36 @@ export default function VoiceChatInterface({ sessionUuid, onEndSession }) {
         },
         onModeChange: (mode) => {
           setIsSpeaking(mode.mode === 'speaking');
-        }
+        },
       });
 
+      // FIX: Check if we were cancelled while connecting (Strict Mode race condition)
+      if (!checkActive()) {
+        console.log('Connection cancelled during initialization, cleaning up...');
+        await conv.endSession();
+        return;
+      }
+
+      conversationRef.current = conv;
       setConversation(conv);
     } catch (err) {
-      setError('Failed to start voice conversation');
-      console.error('Conversation initialization error:', err);
+      setError('Failed to initialize voice chat');
+      console.error('Voice chat initialization error:', err);
+    } finally {
+      setIsConnecting(false);
+      isConnectingRef.current = false;
     }
   };
 
+
+
+
+
+
+
   const handleToggleMute = async () => {
     if (!conversation) return;
-    
+
     try {
       if (isMuted) {
         await conversation.setVolume({ volume: 1.0 });
@@ -85,6 +115,7 @@ export default function VoiceChatInterface({ sessionUuid, onEndSession }) {
       console.error('Error toggling mute:', err);
     }
   };
+
 
   const handleEndCall = async () => {
     try {
@@ -119,13 +150,13 @@ export default function VoiceChatInterface({ sessionUuid, onEndSession }) {
 
   if (error) {
     return (
-      <div className="flex h-full items-center justify-center rounded-lg border bg-card">
+      <div className="flex h-full items-center justify-center border bg-card">
         <div className="text-center p-8">
           <AlertCircle className="mx-auto h-12 w-12 text-destructive mb-4" />
           <h3 className="text-lg font-medium text-foreground mb-2">Voice Chat Error</h3>
           <p className="text-muted-foreground mb-4">{error}</p>
           <button
-            onClick={fetchConfigAndConnect}
+            onClick={() => safeConnect()}
             className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
           >
             Retry Connection
@@ -137,7 +168,7 @@ export default function VoiceChatInterface({ sessionUuid, onEndSession }) {
 
   if (isConnecting || !config) {
     return (
-      <div className="flex h-full items-center justify-center rounded-lg border bg-card">
+      <div className="flex h-full items-center justify-center border bg-card">
         <div className="text-center p-8">
           <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary mb-4" />
           <h3 className="text-lg font-medium text-foreground mb-2">Initializing Voice Mode</h3>
@@ -148,7 +179,7 @@ export default function VoiceChatInterface({ sessionUuid, onEndSession }) {
   }
 
   return (
-    <div className="flex h-full flex-col rounded-lg border bg-card">
+    <div className="flex h-full flex-col border bg-card font-sans text-input">
       <div className="border-b px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
@@ -179,13 +210,13 @@ export default function VoiceChatInterface({ sessionUuid, onEndSession }) {
           </div>
 
           <h3 className="text-xl font-semibold mb-2">
-            {isSpeaking ? 'Speaking...' : 'Ready to Listen'}
+            {isSpeaking ? 'Speaking...' : isConnected ? 'Ready to Listen' : 'Please Connect'}
           </h3>
-          
+
           <p className="text-muted-foreground mb-8">
-            {isConnected 
+            {isConnected
               ? 'Start speaking to interact with your study assistant'
-              : 'Connecting to voice assistant...'
+              : ''
             }
           </p>
 
@@ -193,11 +224,10 @@ export default function VoiceChatInterface({ sessionUuid, onEndSession }) {
             <button
               onClick={handleToggleMute}
               disabled={!isConnected}
-              className={`p-4 rounded-full transition-all duration-200 ${
-                isMuted 
-                  ? 'bg-red-500 hover:bg-red-600 text-white' 
-                  : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
-              } disabled:opacity-50 disabled:cursor-not-allowed`}
+              className={`p-4 rounded-full transition-all duration-200 ${isMuted
+                ? 'bg-red-500 hover:bg-red-600 text-white'
+                : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
               title={isMuted ? 'Unmute' : 'Mute'}
             >
               {isMuted ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
@@ -210,6 +240,14 @@ export default function VoiceChatInterface({ sessionUuid, onEndSession }) {
               title="End Call"
             >
               <PhoneOff className="h-6 w-6" />
+            </button>
+            <button
+              onClick={() => safeConnect()} // or fetchConfigAndConnect, depending on what you intend
+              disabled={isConnected}
+              className="p-4 rounded-full bg-green-500 hover:bg-red-600 text-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Connect"
+            >
+              <Phone className="h-6 w-6" />
             </button>
           </div>
         </div>
