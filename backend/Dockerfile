@@ -15,15 +15,14 @@ COPY requirements.txt .
 # Install dependencies
 # IMPORTANT: Install CPU-only torch first to avoid downloading huge GPU libs
 # This saves ~700MB+ in image size
-RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-RUN pip install --no-cache-dir -r requirements.txt
+# RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+RUN pip install -r requirements.txt
 
 # Copy application code
 COPY . .
 
-# Expose port (Render sets PORT env, but 8000 is our default)
-ENV PORT=8000
-EXPOSE 8000
+# Expose port (Cloud Run/Render will set PORT env variable)
+EXPOSE 8080
 
-# Run command
-CMD ["sh", "-c", "python main.py"]
+# Run command - use uvicorn directly for production
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]
