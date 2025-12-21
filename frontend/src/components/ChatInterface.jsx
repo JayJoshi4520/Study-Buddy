@@ -1,25 +1,51 @@
-import { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, Bot, Cpu, User, MessagesSquare, Mic, MessageSquare } from 'lucide-react';
-import { queryDocuments, switchModel, saveChatMessage, getChatMessages } from '../api';
-import VoiceChatInterface from './VoiceChatInterface';
-import ReactMarkdown from 'react-markdown';
-import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
-import 'katex/dist/katex.min.css';
+import { useState, useRef, useEffect } from "react";
+import {
+  Send,
+  Loader2,
+  Bot,
+  Cpu,
+  User,
+  MessagesSquare,
+  Mic,
+  MessageSquare,
+  Copy,
+  Check,
+} from "lucide-react";
+import {
+  queryDocuments,
+  switchModel,
+  saveChatMessage,
+  getChatMessages,
+} from "../api";
+import VoiceChatInterface from "./VoiceChatInterface";
+import ReactMarkdown from "react-markdown";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 
+import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize from "rehype-sanitize";
+import "highlight.js/styles/github.css";
 
-export default function ChatInterface({ sessionUuid, sessionData, onSwitchToVoice, onEndVoiceSession }) {
+export default function ChatInterface({
+  sessionUuid,
+  sessionData,
+  onSwitchToVoice,
+  onEndVoiceSession,
+}) {
   const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef(null);
   const chatContainerRef = useRef(null);
-  const [selectedModel, setSelectedModel] = useState('gemini');
+  const [selectedModel, setSelectedModel] = useState("gemini");
   const [switchingModel, setSwitchingModel] = useState(false);
-  const [viewMode, setViewMode] = useState('text');
+  const [viewMode, setViewMode] = useState("text");
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
   useEffect(() => {
@@ -27,54 +53,50 @@ export default function ChatInterface({ sessionUuid, sessionData, onSwitchToVoic
   }, [messages]);
 
   useEffect(() => {
-    if (sessionData?.session_type === 'voice') {
-      setViewMode('voice');
+    if (sessionData?.session_type === "voice") {
+      setViewMode("voice");
     } else {
-      setViewMode('text');
+      setViewMode("text");
     }
   }, [sessionData]);
 
   useEffect(() => {
     const loadMessages = async () => {
-      if (!sessionUuid || viewMode === 'voice') return;
+      if (!sessionUuid || viewMode === "voice") return;
 
       try {
         const existingMessages = await getChatMessages(sessionUuid);
-
         const formattedMessages = [];
         for (const msg of existingMessages) {
           formattedMessages.push({
-            type: 'user',
-            content: msg.message_content
+            type: "user",
+            content: msg.message_content,
           });
 
           if (msg.response_content) {
             formattedMessages.push({
-              type: 'assistant',
+              type: "assistant",
               content: msg.response_content,
-              model: msg.model_provider
+              model: msg.model_provider,
             });
           }
         }
-
         setMessages(formattedMessages);
       } catch (error) {
-        console.error('Error loading chat messages:', error);
+        console.error("Error loading chat messages:", error);
       }
     };
-
     loadMessages();
   }, [sessionUuid, viewMode]);
 
   const handleModelSwitch = async (provider) => {
     if (provider === selectedModel || isLoading || switchingModel) return;
-
     try {
       setSwitchingModel(true);
       await switchModel(provider);
       setSelectedModel(provider);
     } catch (error) {
-      console.error('Error switching model:', error);
+      console.error("Error switching model:", error);
     } finally {
       setSwitchingModel(false);
     }
@@ -85,20 +107,27 @@ export default function ChatInterface({ sessionUuid, sessionData, onSwitchToVoic
     if (!input.trim() || isLoading) return;
 
     const question = input.trim();
-    setInput('');
+    setInput("");
     setIsLoading(true);
 
-    setMessages(prev => [...prev, { type: 'user', content: question }]);
+    setMessages((prev) => [...prev, { type: "user", content: question }]);
 
     const startTime = Date.now();
     let messageSaved = false;
 
     try {
-      let assistantMessage = '';
-      setMessages(prev => [...prev, { type: 'assistant', content: '', loading: true }]);
+      let assistantMessage = "";
+      setMessages((prev) => [
+        ...prev,
+        { type: "assistant", content: "", loading: true },
+      ]);
 
-      const response = await queryDocuments(question, 3, selectedModel, sessionUuid);
-
+      const response = await queryDocuments(
+        question,
+        3,
+        selectedModel,
+        sessionUuid,
+      );
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
 
@@ -107,76 +136,54 @@ export default function ChatInterface({ sessionUuid, sessionData, onSwitchToVoic
         if (done) break;
 
         const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
+        const lines = chunk.split("\n");
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
+          if (line.startsWith("data: ")) {
             try {
               const data = JSON.parse(line.slice(6));
-
-              if (data.type === 'error') {
-                setMessages(prev => [
+              if (data.type === "error") {
+                setMessages((prev) => [
                   ...prev.slice(0, -1),
-                  { type: 'error', content: data.content }
+                  { type: "error", content: data.content },
                 ]);
                 break;
-              } else if (data.type === 'response') {
+              } else if (data.type === "response") {
                 assistantMessage += data.content;
-                setMessages(prev => [
+                setMessages((prev) => [
                   ...prev.slice(0, -1),
                   {
-                    type: 'assistant',
+                    type: "assistant",
                     content: assistantMessage,
-                    model: data.provider
-                  }
+                    model: data.provider,
+                  },
                 ]);
-              } else if (data.type === 'done') {
+              } else if (data.type === "done") {
                 if (sessionUuid && assistantMessage.trim() && !messageSaved) {
                   const processingTime = Date.now() - startTime;
-                  try {
-                    await saveChatMessage(
-                      sessionUuid,
-                      question,
-                      assistantMessage.trim(),
-                      selectedModel,
-                      null,
-                      processingTime
-                    );
-                    messageSaved = true;
-                  } catch (saveError) {
-                    console.error('Error saving message:', saveError);
-                  }
+                  await saveChatMessage(
+                    sessionUuid,
+                    question,
+                    assistantMessage.trim(),
+                    selectedModel,
+                    null,
+                    processingTime,
+                  );
+                  messageSaved = true;
                 }
                 break;
               }
             } catch (e) {
-              console.error('Error parsing SSE data:', e);
+              console.error("Error parsing SSE data:", e);
             }
           }
         }
       }
-
-      if (sessionUuid && assistantMessage.trim() && !messageSaved) {
-        const processingTime = Date.now() - startTime;
-        try {
-          await saveChatMessage(
-            sessionUuid,
-            question,
-            assistantMessage.trim(),
-            selectedModel,
-            null,
-            processingTime
-          );
-        } catch (saveError) {
-          console.error('Error in fallback save:', saveError);
-        }
-      }
-
     } catch (error) {
-      console.error('Error:', error);
-      setMessages(prev => [
+      console.error("Error:", error);
+      setMessages((prev) => [
         ...prev,
-        { type: 'error', content: 'Failed to get response. Please try again.' }
+        { type: "error", content: "Failed to get response." },
       ]);
     } finally {
       setIsLoading(false);
@@ -184,193 +191,276 @@ export default function ChatInterface({ sessionUuid, sessionData, onSwitchToVoic
   };
 
   const handleVoiceModeToggle = () => {
-    if (sessionData?.session_type === 'voice') {
-      setViewMode(viewMode === 'voice' ? 'text' : 'voice');
+    if (sessionData?.session_type === "voice") {
+      setViewMode(viewMode === "voice" ? "text" : "voice");
     } else {
       onSwitchToVoice?.();
     }
   };
 
-  const MessageBubble = ({ message }) => {
-    const isUser = message.type === 'user';
-    const isError = message.type === 'error';
+  const cleanMarkdown = (raw) => {
+    if (!raw && raw !== "") return "";
+    let s = String(raw || "").replace(/\r\n/g, "\n");
+    s = s.replace(/^\s*([*•-])\s*$(?:\r?\n)?/gm, "");
+    s = s.replace(/\n{3,}/g, "\n\n");
+    return s.trim();
+  };
+
+  const CodeBlock = ({ children, className }) => {
+    const [copied, setCopied] = useState(false);
+    const codeText = String(children).replace(/\n$/, "");
+
+    const handleCopy = async () => {
+      await navigator.clipboard.writeText(codeText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    };
 
     return (
-      <div className={`flex items-start space-x-2 ${isUser ? 'flex-row-reverse space-x-reverse' : ''}`}>
-        <div className={`flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-full ${isUser ? 'bg-primary' : 'bg-muted'
-          }`}>
-          {isUser ? (
-            <User className="h-4 w-4 text-primary-foreground" />
-          ) : (
-            <Bot className="h-4 w-4 text-muted-foreground" />
-          )}
+      <div className="relative group my-4">
+        <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-1 rounded bg-zinc-700 px-2 py-1 text-xs text-white hover:bg-zinc-600"
+          >
+            {copied ? (
+              <Check className="h-3 w-3" />
+            ) : (
+              <Copy className="h-3 w-3" />
+            )}
+            {copied ? "Copied" : "Copy"}
+          </button>
         </div>
-        <div
-          className={`flex max-w-[80%] flex-col gap-2 rounded-lg px-4 py-2 text-sm ${isUser
-            ? 'bg-primary text-primary-foreground'
-            : isError
-              ? 'bg-destructive/10 text-destructive'
-              : 'bg-muted text-input'
-            }`}
+        <pre
+          className={`${className} rounded-lg bg-zinc-900 p-4 overflow-x-auto text-zinc-100 font-mono text-sm`}
         >
-          {message.loading ? (
-            <div className="flex items-center space-x-2">
-              <Loader2 className="h-4 w-4 animate-spin text-input" />
-              <span className='text-input'>Thinking...</span>
+          <code>{children}</code>
+        </pre>
+      </div>
+    );
+  };
+
+  const MessageBubble = ({ message }) => {
+    const isUser = message.type === "user";
+    const isError = message.type === "error";
+
+    return (
+      <div
+        className={`w-full py-8 ${isUser ? "bg-transparent" : "bg-muted/30 border-y border-border/50"}`}
+      >
+        <div className="mx-auto max-w-3xl px-4 flex space-x-4 md:space-x-6">
+          <div
+            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded shadow-sm ${
+              isUser
+                ? "bg-primary"
+                : "bg-gradient-to-br from-emerald-500 to-teal-600"
+            }`}
+          >
+            {isUser ? (
+              <User className="h-5 w-5 text-primary-foreground" />
+            ) : (
+              <Bot className="h-5 w-5 text-white" />
+            )}
+          </div>
+
+          <div className="flex-1 space-y-2 overflow-hidden">
+            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground/80">
+              {isUser ? "You" : message.model || "Study Buddy"}
+            </p>
+
+            <div
+              className={`prose prose-slate dark:prose-invert max-w-none break-words leading-relaxed ${isUser ? "text-input" : ""}`}
+            >
+              {message.loading ? (
+                <div className="flex items-center space-x-2 text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="text-sm italic">Thinking...</span>
+                </div>
+              ) : (
+                <ReactMarkdown
+                  remarkPlugins={[remarkMath, remarkGfm]}
+                  rehypePlugins={[
+                    rehypeKatex,
+                    rehypeRaw,
+                    rehypeSanitize,
+                    rehypeHighlight,
+                  ]}
+                  components={{
+                    p: ({ children }) => (
+                      <p className="mb-4 last:mb-0 leading-7">{children}</p>
+                    ),
+                    ul: ({ children }) => (
+                      <ul className="list-disc ml-6 space-y-2 mb-4">
+                        {children}
+                      </ul>
+                    ),
+                    ol: ({ children }) => (
+                      <ol className="list-decimal ml-6 space-y-2 mb-4">
+                        {children}
+                      </ol>
+                    ),
+                    code: ({ inline, className, children }) =>
+                      inline ? (
+                        <code className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono text-primary">
+                          {children}
+                        </code>
+                      ) : (
+                        <CodeBlock className={className}>{children}</CodeBlock>
+                      ),
+                  }}
+                >
+                  {cleanMarkdown(message.content)}
+                </ReactMarkdown>
+              )}
             </div>
-          ) : (
-            <div className={`whitespace-pre-wrap ${!isUser ? 'prose prose-sm max-w-none dark:prose-invert' : ''}`}>
-              <ReactMarkdown
-                remarkPlugins={[remarkMath]}
-                rehypePlugins={[rehypeKatex]}
-                components={{
-                  p: ({ node, ...props }) => <p {...props} className={`leading-relaxed ${isUser ? 'text-inherit' : 'mb-2 last:mb-0'}`} />,
-                  ul: ({ node, ...props }) => <ul {...props} className="my-2 list-disc pl-4 space-y-1" />,
-                  ol: ({ node, ...props }) => <ol {...props} className="my-2 list-decimal pl-4 space-y-1" />,
-                  li: ({ node, ...props }) => <li {...props} className="leading-relaxed" />,
-                  h1: ({ node, ...props }) => <h1 {...props} className="text-lg font-bold mt-4 mb-2 first:mt-0" />,
-                  h2: ({ node, ...props }) => <h2 {...props} className="text-base font-bold mt-3 mb-2" />,
-                  h3: ({ node, ...props }) => <h3 {...props} className="text-sm font-bold mt-2 mb-1" />,
-                  code: ({ node, inline, className, children, ...props }) => {
-                    return inline ? (
-                      <code className="bg-muted px-1 py-0.5 rounded text-sm font-mono" {...props}>{children}</code>
-                    ) : (
-                      <code className="block bg-muted p-2 rounded text-sm font-mono overflow-x-auto my-2" {...props}>{children}</code>
-                    );
-                  }
-                }}
-              >
-                {message.content}
-              </ReactMarkdown>
-            </div>
-          )}
+          </div>
         </div>
       </div>
     );
   };
 
+  const isVoiceSession = sessionData?.session_type === "voice";
+
   if (!sessionUuid) {
     return (
-      <div className="flex h-full items-center justify-center border bg-card font-sans">
-        <div className="text-center">
-          <MessagesSquare className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-          <h3 className="text-lg font-medium text-foreground mb-2">No Chat Session Selected</h3>
-          <p className="text-muted-foreground mb-4">
-            Create a new chat session or select an existing one to start chatting.
+      <div
+        className="flex h-full items-center justify-center bg-card font-sans"
+        style={{ fontFamily: "var(--font-sans)" }}
+      >
+        <div className="text-center px-6">
+          <MessagesSquare className="mx-auto h-16 w-16 text-muted-foreground/30 mb-6" />
+          <h3 className="text-2xl font-bold text-foreground mb-3">
+            No Chat Selected
+          </h3>
+          <p className="text-muted-foreground max-w-xs mx-auto">
+            Select a project or create a new session to start learning.
           </p>
         </div>
       </div>
     );
   }
 
-  if (viewMode === 'voice' && sessionData?.session_type === 'voice') {
-    return <VoiceChatInterface sessionUuid={sessionUuid} onEndSession={onEndVoiceSession} />;
+  // FIX: If it's a voice session, ALWAYS render the VoiceChatInterface
+  // unless the user manually toggled back to text view
+  if (isVoiceSession && viewMode === "voice") {
+    return (
+      <div
+        className="flex-1 h-full bg-card"
+        style={{ fontFamily: "var(--font-sans)" }}
+      >
+        <VoiceChatInterface
+          sessionUuid={sessionUuid}
+          onEndSession={onEndVoiceSession}
+        />
+      </div>
+    );
   }
 
   return (
-    <div className="flex h-full flex-col border bg-card font-sans">
-      <div className="border-b px-4 py-2">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <span className="text-sm font-bold text-input">
-              {sessionData?.session_type === 'voice' ? 'Voice Session' : 'Text Session'}
-            </span>
-            {sessionData?.session_type === 'voice' && (
-              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
-                <Mic className="h-3 w-3 mr-1" />
-                Voice Enabled
+    <div
+      className="flex h-full flex-col bg-card"
+      style={{ fontFamily: "var(--font-sans)" }}
+    >
+      {/* Sticky Header */}
+      <header className="sticky top-0 z-20 border-b bg-card/80 backdrop-blur-sm px-4 py-3">
+        <div className="flex items-center justify-between max-w-5xl mx-auto">
+          <div className="flex items-center space-x-3">
+            <h2 className="text-sm font-bold tracking-tight text-input uppercase">
+              {sessionData?.session_type === "voice"
+                ? "Voice Session"
+                : "Text Session"}
+            </h2>
+            {sessionData?.session_type === "voice" && (
+              <span className="flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-500 border border-blue-500/20">
+                <Mic className="h-3 w-3 mr-1" /> LIVE
               </span>
             )}
           </div>
 
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => handleModelSwitch('ollama')}
-              disabled={switchingModel || viewMode === 'voice'}
-              className={`inline-flex items-center space-x-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${selectedModel === 'ollama'
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-accent'
-                } disabled:opacity-50`}
+              onClick={() => handleModelSwitch("ollama")}
+              disabled={switchingModel}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 transition-all ${
+                selectedModel === "ollama"
+                  ? "bg-primary text-primary-foreground shadow-md"
+                  : "hover:bg-accent text-muted-foreground"
+              }`}
             >
-              <Cpu className="h-4 w-4" />
-              <span>Ollama</span>
+              <Cpu className="h-3.5 w-3.5" /> OLLAMA
             </button>
-
             <button
-              onClick={() => handleModelSwitch('gemini')}
-              disabled={switchingModel || viewMode === 'voice'}
-              className={`inline-flex items-center space-x-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${selectedModel === 'gemini'
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-accent'
-                } disabled:opacity-50`}
+              onClick={() => handleModelSwitch("gemini")}
+              disabled={switchingModel}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 transition-all ${
+                selectedModel === "gemini"
+                  ? "bg-primary text-primary-foreground shadow-md"
+                  : "hover:bg-accent text-muted-foreground"
+              }`}
             >
-              <Bot className="h-4 w-4" />
-              <span>Gemini</span>
+              <Bot className="h-3.5 w-3.5" /> GEMINI
             </button>
-
-            {sessionData?.session_type === 'voice' && (
-              <button
-                onClick={handleVoiceModeToggle}
-                className={`inline-flex items-center space-x-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${viewMode === 'voice'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
-                  }`}
-                title={viewMode === 'voice' ? 'Switch to Text Mode' : 'Switch to Voice Mode'}
-              >
-                {viewMode === 'voice' ? (
-                  <MessageSquare className="h-4 w-4" />
-                ) : (
-                  <Mic className="h-4 w-4" />
-                )}
-              </button>
-            )}
           </div>
         </div>
-      </div>
+      </header>
 
-      <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((message, index) => (
-          <div key={index} className="animate-fade-in">
-            <MessageBubble message={message} />
-          </div>
-        ))}
-        <div ref={messagesEndRef} />
-      </div>
-
-      <form onSubmit={handleSubmit} className="border-t bg-card p-4 sticky bottom-0 z-10">
-        <div className="flex space-x-2">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={`Ask a question using ${selectedModel === 'gemini' ? 'Google Gemini' : 'Ollama'}...`}
-            className="flex-1 min-w-0 rounded-md border bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring text-input"
-            disabled={isLoading || switchingModel}
-          />
-          <button
-            type="submit"
-            disabled={isLoading || switchingModel || !input.trim()}
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
-          >
-            {isLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
-          </button>
-
-          {sessionData?.session_type !== 'voice' && (
-            <button
-              type="button"
-              onClick={handleVoiceModeToggle}
-              className="inline-flex items-center justify-center rounded-md bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/90 transition-colors"
-              title="Create Voice Session"
-            >
-              <Mic className="h-4 w-4" />
-            </button>
-          )}
+      {/* Messages Area */}
+      <main className="flex-1 overflow-y-auto overflow-x-hidden">
+        <div className="flex flex-col">
+          {messages.map((message, index) => (
+            <MessageBubble key={index} message={message} />
+          ))}
+          <div ref={messagesEndRef} className="h-20" />
         </div>
-      </form>
+      </main>
+
+      {/* Input Area */}
+      <footer className="p-4 md:p-6 bg-gradient-to-t from-card via-card to-transparent">
+        <div className="max-w-3xl mx-auto">
+          <form onSubmit={handleSubmit} className="relative group">
+            <div className="absolute inset-0 bg-primary/5 rounded-xl blur transition group-focus-within:bg-primary/10" />
+            <div className="relative flex items-end bg-background border rounded-xl shadow-lg focus-within:border-primary/50 transition-all p-2">
+              <textarea
+                rows="1"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) =>
+                  e.key === "Enter" &&
+                  !e.shiftKey &&
+                  (e.preventDefault(), handleSubmit(e))
+                }
+                placeholder={`Message ${selectedModel === "gemini" ? "Gemini" : "Ollama"}...`}
+                className="flex-1 bg-transparent border-0 focus:ring-0 text-sm py-3 px-4 resize-none max-h-48 text-input"
+                disabled={isLoading || switchingModel}
+              />
+              <div className="flex gap-2 p-1">
+                <button
+                  type="button"
+                  onClick={handleVoiceModeToggle}
+                  className="p-2 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                >
+                  <Mic className="h-5 w-5" />
+                </button>
+                <button
+                  type="submit"
+                  disabled={isLoading || !input.trim()}
+                  className="p-2 rounded-lg bg-primary text-primary-foreground disabled:opacity-30 transition-all hover:scale-105 active:scale-95 shadow-sm"
+                >
+                  {isLoading ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <Send className="h-5 w-5" />
+                  )}
+                </button>
+              </div>
+            </div>
+            <p className="text-[10px] text-center text-muted-foreground mt-3">
+              Study Buddy may provide inaccurate information. Verify technical
+              details.
+            </p>
+          </form>
+        </div>
+      </footer>
     </div>
   );
 }
